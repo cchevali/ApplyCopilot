@@ -1,0 +1,16 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: applycopilot
+      POSTGRES_PASSWORD: applycopilot
+      POSTGRES_DB: applycopilot
+    ports:
+      - "5432:5432"
+    volumes:
+      - applycopilot_db:/var/lib/postgresql/data
+
+volumes:
+  applycopilot_db:

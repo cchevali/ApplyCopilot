@@ -1,0 +1,137 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ApplicationStatus {
+  queued
+  applied
+  interview
+  rejected
+  offer
+}
+
+enum AtsType {
+  manual
+  greenhouse
+  lever
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  resumes      Resume[]
+  experiences  ExperienceItem[]
+}
+
+model Resume {
+  id            String   @id @default(cuid())
+  userId        String
+  filePath      String
+  extractedText String
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id])
+}
+
+model ExperienceItem {
+  id          String   @id @default(cuid())
+  userId      String
+  company     String
+  title       String
+  startDate   String?
+  endDate     String?
+  bullets     Json
+  skillsTags  String[]
+  verified    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model TargetProfile {
+  id              String   @id @default(cuid())
+  name            String
+  locations       String[]
+  remoteAllowed   Boolean  @default(true)
+  roleTitles      String[]
+  includeKeywords String[]
+  excludeKeywords String[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  scores          JobScore[]
+}
+
+model Company {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  atsType       AtsType
+  boardUrl      String?
+  lastFetchedAt DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  jobs          JobPosting[]
+}
+
+model JobPosting {
+  id          String       @id @default(cuid())
+  source      String
+  url         String?
+  title       String
+  location    String?
+  remote      Boolean      @default(false)
+  description String
+  postedAt    DateTime?
+  ingestedAt  DateTime     @default(now())
+  hash        String       @unique
+  companyId   String
+  company     Company      @relation(fields: [companyId], references: [id])
+  scores      JobScore[]
+  applications Application[]
+  packet      Packet?
+}
+
+model JobScore {
+  id              String       @id @default(cuid())
+  jobId           String
+  targetProfileId String
+  scoreNumeric    Int
+  reasonsJson     Json
+  createdAt       DateTime     @default(now())
+  job             JobPosting   @relation(fields: [jobId], references: [id])
+  targetProfile   TargetProfile @relation(fields: [targetProfileId], references: [id])
+
+  @@unique([jobId, targetProfileId])
+}
+
+model Packet {
+  id               String     @id @default(cuid())
+  jobId            String     @unique
+  resumeVariantText String
+  coverLetterText  String?
+  fieldPackJson    Json
+  createdAt        DateTime   @default(now())
+  job              JobPosting @relation(fields: [jobId], references: [id])
+  applications     Application[]
+}
+
+model Application {
+  id         String            @id @default(cuid())
+  jobId      String
+  status     ApplicationStatus @default(queued)
+  appliedAt  DateTime?
+  notes      String?
+  followUpAt DateTime?
+  packetId   String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  job        JobPosting        @relation(fields: [jobId], references: [id])
+  packet     Packet?           @relation(fields: [packetId], references: [id])
+}

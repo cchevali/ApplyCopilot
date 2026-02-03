@@ -1,36 +1,86 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ApplyCopilot
 
-## Getting Started
+Human-in-the-loop job application copilot for Northern Virginia targets. Local-first, single-user, and compliance-first.
 
-First, run the development server:
+## Quick Start
+1. Copy `.env.example` to `.env` and update secrets.
+2. Install dependencies:
+   ```bash
+   pnpm i
+   ```
+   Build scripts are pre-approved via `pnpm-workspace.yaml`, so installs stay non-interactive.
+   Then generate Prisma client if needed:
+   ```bash
+   pnpm prisma generate
+   ```
+3. Start Postgres:
+   ```bash
+   docker compose up -d
+   ```
+4. Run migrations + seed:
+   ```bash
+   pnpm prisma migrate dev
+   pnpm seed
+   ```
+5. Run the app:
+   ```bash
+   pnpm dev
+   ```
+6. Visit `http://localhost:3000` and log in with the seeded admin credentials.
+   Defaults: `admin@example.com` / `changeme` (change via env).
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Commands
+- `pnpm dev` - run the dev server
+- `pnpm prisma migrate dev` - apply schema migrations
+- `pnpm seed` - create admin user and default target profile
+- `pnpm test` - run Vitest suite
+  - Requires Postgres running (`docker compose up -d`)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Architecture Overview
+- Next.js 14 (App Router) + TypeScript
+- Prisma ORM + PostgreSQL
+- NextAuth (Credentials provider)
+- Local storage at `./storage` for resume uploads
+- Deterministic scoring in `lib/scoring.ts`
+- ATS importers in `lib/ats/`
+- Server actions in `lib/actions.ts`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Data Flow
+1. Resume upload saves file to `./storage` and extracted text to `Resume`.
+2. Experience inventory is manually verified (or auto-suggested).
+3. Jobs are added manually or imported via Greenhouse/Lever.
+4. Deterministic scoring creates `JobScore` records.
+5. Packet generation reorders verified bullets and stores `Packet`.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## ATS Importers
+All importers live in `lib/ats/`. To add a new ATS:
+1. Implement a fetcher with rate limiting and a clear User-Agent.
+2. Parse only public endpoints. Do not bypass login or scrape prohibited sources.
+3. Call it from a server action in `lib/actions.ts`.
+4. Ensure dedupe via `computeJobHash` in `lib/dedupe.ts`.
 
-## Learn More
+## Security Notes
+- Resumes are treated as sensitive and never logged.
+- Authentication is required for all pages beyond `/login`.
+- Only verified experience items can be used for tailoring.
 
-To learn more about Next.js, take a look at the following resources:
+## Optional AI
+If `OPENAI_API_KEY` is set, AI assists with:
+- Resume-to-structure suggestions
+- Bullet rephrasing for tailored packets
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+The app remains fully usable without AI.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Security
+- Next.js is pinned to a patched 14.x release. See `SECURITY.md`.
 
-## Deploy on Vercel
+## CI
+GitHub Actions runs Prisma generate/migrate/seed plus unit + integration tests against a Postgres service container.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Environment Variables
+- `DATABASE_URL` - PostgreSQL connection string
+- `NEXTAUTH_URL` - base URL for NextAuth
+- `NEXTAUTH_SECRET` - long random secret for sessions
+- `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` - seed credentials
+- `STORAGE_PATH` - local path for uploads (default `./storage`)
+- `OPENAI_API_KEY` - optional
