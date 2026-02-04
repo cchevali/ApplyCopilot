@@ -2,12 +2,17 @@
 
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function LoginPage() {
   const params = useSearchParams();
-  const error = params.get("error");
+  // Avoid hydration mismatch: server render cannot reliably know client search params.
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setError(params.get("error"));
+  }, [params]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
