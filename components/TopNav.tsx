@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 
 const links = [
-  { href: "/dashboard", label: "Dashboard" },
   { href: "/setup", label: "Setup" },
-  { href: "/jobs", label: "Jobs" },
-  { href: "/applications", label: "Applications" },
+  { href: "/dashboard", label: "Today" },
+  { href: "/apply", label: "Apply" },
+  { href: "/save", label: "Save Job" },
+  { href: "/applications", label: "Tracking" },
 ];
 
 export function TopNav() {

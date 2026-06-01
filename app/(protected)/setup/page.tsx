@@ -1,14 +1,23 @@
 import {
   createExperienceItem,
+  createJobSource,
   deleteExperienceItem,
+  deleteJobSource,
   generateExperienceSuggestions,
+  runRefreshNow,
+  toggleJobSource,
   updateExperienceItem,
+  updateProfileLinks,
   updateTargetProfile,
   uploadResume,
 } from "@/lib/actions";
 import { prisma } from "@/lib/prisma";
 
 export default async function SetupPage() {
+  const user = await prisma.user.findFirst({
+    orderBy: { createdAt: "asc" },
+    select: { githubUrl: true },
+  });
   const resume = await prisma.resume.findFirst({
     orderBy: { createdAt: "desc" },
   });
@@ -19,10 +28,39 @@ export default async function SetupPage() {
     orderBy: { createdAt: "asc" },
   });
 
+  const prismaAny = prisma as any;
+  const sources = prismaAny.jobSource
+    ? await prismaAny.jobSource.findMany({
+        orderBy: { createdAt: "desc" },
+        include: {
+          runs: { orderBy: { startedAt: "desc" }, take: 1 },
+        },
+      })
+    : [];
+
   return (
     <div className="space-y-8">
       <section className="card p-6">
-        <h2 className="text-xl font-semibold text-ink">Step 1 — Upload Resume</h2>
+        <h2 className="text-xl font-semibold text-ink">Profile Links</h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Add your GitHub profile so packet field packs can include it.
+        </p>
+        <form action={updateProfileLinks} className="mt-4 grid gap-3 md:max-w-xl">
+          <input
+            className="input"
+            type="url"
+            name="githubUrl"
+            placeholder="https://github.com/your-handle"
+            defaultValue={user?.githubUrl ?? ""}
+          />
+          <button className="btn w-fit" type="submit">
+            Save Profile Links
+          </button>
+        </form>
+      </section>
+
+      <section className="card p-6">
+        <h2 className="text-xl font-semibold text-ink">Step 1 - Upload Resume</h2>
         <p className="mt-2 text-sm text-slate-600">
           Upload the latest PDF or DOCX. Text is extracted and stored locally.
         </p>
@@ -56,7 +94,7 @@ export default async function SetupPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold text-ink">
-              Step 2 — Experience Inventory
+              Step 2 - Experience Inventory
             </h2>
             <p className="mt-2 text-sm text-slate-600">
               Confirm verified items and edit bullets. Tailoring will only use
@@ -194,7 +232,7 @@ export default async function SetupPage() {
       </section>
 
       <section className="card p-6">
-        <h2 className="text-xl font-semibold text-ink">Step 3 — Target Profile</h2>
+        <h2 className="text-xl font-semibold text-ink">Step 3 - Target Profile</h2>
         <p className="mt-2 text-sm text-slate-600">
           Configure Northern Virginia focus, role titles, and keyword filters.
         </p>
@@ -250,6 +288,112 @@ export default async function SetupPage() {
           </div>
           <button className="btn w-fit" type="submit">
             Save Target Profile
+          </button>
+        </form>
+      </section>
+
+      <section className="card p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold text-ink">Job Sources</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              Add Greenhouse, Lever, or Careers Page JSON-LD sources for daily
+              refresh.
+            </p>
+          </div>
+          <form action={runRefreshNow}>
+            <button className="btn-secondary" type="submit">
+              Run refresh now
+            </button>
+          </form>
+        </div>
+
+        {!prismaAny.jobSource && (
+          <p className="mt-4 text-sm text-amber-700">
+            Job sources require running the latest database migration and Prisma
+            generate.
+          </p>
+        )}
+
+        <div className="mt-6 grid gap-4">
+          {sources.length === 0 && (
+            <p className="text-sm text-slate-500">No sources configured yet.</p>
+          )}
+          {sources.map((source: any) => {
+            const lastRun = source.runs[0];
+            return (
+              <form
+                key={source.id}
+                action={toggleJobSource}
+                className="rounded-lg border border-slate-200 bg-white p-4"
+              >
+                <input type="hidden" name="id" value={source.id} />
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-ink">{source.name}</p>
+                    <p className="text-xs text-slate-600">
+                      {source.type} - {source.urlOrHandle}
+                    </p>
+                    {lastRun && (
+                      <p className="text-xs text-slate-500">
+                        Last run: {new Date(lastRun.startedAt).toLocaleString()} -{" "}
+                        {lastRun.status}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        name="isEnabled"
+                        type="checkbox"
+                        defaultChecked={source.isEnabled}
+                      />
+                      Enabled
+                    </label>
+                    <button className="btn-secondary" type="submit">
+                      Save
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      type="submit"
+                      formAction={deleteJobSource}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </form>
+            );
+          })}
+        </div>
+
+        <form action={createJobSource} className="mt-6 grid gap-3">
+          <h3 className="text-base font-semibold text-ink">Add Job Source</h3>
+          <div className="grid gap-4 md:grid-cols-2">
+            <input
+              name="name"
+              className="input"
+              placeholder="Source name (e.g., Acme Careers)"
+              required
+            />
+            <select name="type" className="input" defaultValue="GREENHOUSE">
+              <option value="GREENHOUSE">Greenhouse</option>
+              <option value="LEVER">Lever</option>
+              <option value="CAREERS_PAGE_JSONLD">Careers Page JSON-LD</option>
+            </select>
+            <input
+              name="urlOrHandle"
+              className="input md:col-span-2"
+              placeholder="Board URL / handle / page URL"
+              required
+            />
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" name="isEnabled" defaultChecked />
+              Enabled
+            </label>
+          </div>
+          <button className="btn w-fit" type="submit">
+            Add Source
           </button>
         </form>
       </section>

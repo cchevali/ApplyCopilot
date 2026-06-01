@@ -12,8 +12,12 @@ import { extractGreenhouseCompany, fetchGreenhouseJobs } from "@/lib/ats/greenho
 import { extractLeverCompany, fetchLeverJobs } from "@/lib/ats/lever";
 import { shouldFetch } from "@/lib/rateLimit";
 import { buildResumeVariant } from "@/lib/tailoring";
+import { addBusinessDays } from "@/lib/date";
+import { execFile } from "child_process";
+import { promisify } from "util";
 
 const MAX_IMPORT = 50;
+const execFileAsync = promisify(execFile);
 
 function parseBullets(value: FormDataEntryValue | null) {
   if (!value) return [];
@@ -173,6 +177,21 @@ export async function updateTargetProfile(formData: FormData) {
   revalidatePath("/dashboard");
 }
 
+export async function updateProfileLinks(formData: FormData) {
+  const session = await requireUser();
+  const githubUrl = String(formData.get("githubUrl") || "").trim();
+
+  await prisma.user.update({
+    where: { email: session.user?.email ?? "" },
+    data: {
+      githubUrl: githubUrl || null,
+    },
+  });
+
+  revalidatePath("/setup");
+  revalidatePath("/apply");
+}
+
 export async function createManualJob(formData: FormData) {
   await requireUser();
   const companyName =
@@ -217,6 +236,109 @@ export async function createManualJob(formData: FormData) {
   await computeScores(job.id);
   revalidatePath("/jobs");
   revalidatePath("/dashboard");
+}
+
+export async function saveJobFromForm(formData: FormData) {
+  await requireUser();
+  const url = String(formData.get("url") || "").trim();
+  const companyName =
+    String(formData.get("company") || "").trim() || "Unknown";
+  const title = String(formData.get("title") || "").trim() || "Untitled";
+  const location = String(formData.get("location") || "").trim();
+  const description = String(formData.get("description") || "").trim();
+
+  const company = await prisma.company.upsert({
+    where: { name: companyName },
+    update: { atsType: "manual" },
+    create: { name: companyName, atsType: "manual" },
+  });
+
+  const hash = computeJobHash({
+    url,
+    title,
+    company: company.name,
+    location,
+  });
+
+  const existing = await prisma.jobPosting.findUnique({ where: { hash } });
+  if (!existing) {
+    const job = await prisma.jobPosting.create({
+      data: {
+        source: "manual",
+        url,
+        title,
+        location,
+        remote: location.toLowerCase().includes("remote"),
+        description,
+        companyId: company.id,
+        hash,
+      },
+    });
+    await computeScores(job.id);
+  }
+  revalidatePath("/dashboard");
+  revalidatePath("/save");
+}
+
+export async function createJobSource(formData: FormData) {
+  const session = await requireUser();
+  const name = String(formData.get("name") || "").trim();
+  const type = String(formData.get("type") || "GREENHOUSE");
+  const urlOrHandle = String(formData.get("urlOrHandle") || "").trim();
+  const isEnabled = formData.get("isEnabled") === "on";
+
+  if (!name || !urlOrHandle) {
+    return;
+  }
+
+  await prisma.jobSource.create({
+    data: {
+      name,
+      type: type as any,
+      urlOrHandle,
+      isEnabled,
+      user: { connect: { email: session.user?.email ?? "" } },
+    },
+  });
+  revalidatePath("/setup");
+}
+
+export async function toggleJobSource(formData: FormData) {
+  await requireUser();
+  const id = String(formData.get("id") || "");
+  const isEnabled = formData.get("isEnabled") === "on";
+  if (!id) return;
+  await prisma.jobSource.update({
+    where: { id },
+    data: { isEnabled },
+  });
+  revalidatePath("/setup");
+}
+
+export async function deleteJobSource(formData: FormData) {
+  await requireUser();
+  const id = String(formData.get("id") || "");
+  if (!id) return;
+  await prisma.jobSource.delete({ where: { id } });
+  revalidatePath("/setup");
+}
+
+export async function runRefreshNow() {
+  await requireUser();
+  if (process.env.NODE_ENV === "production" && process.env.APPLYCOPILOT_ALLOW_RUNNER !== "1") {
+    throw new Error("Runner disabled in production without APPLYCOPILOT_ALLOW_RUNNER=1.");
+  }
+
+  const isWindows = process.platform === "win32";
+  const cmd = isWindows ? "cmd" : "pnpm";
+  const refreshArgs = isWindows ? ["/c", "pnpm", "jobs:refresh"] : ["jobs:refresh"];
+  const queueArgs = isWindows ? ["/c", "pnpm", "queue:build"] : ["queue:build"];
+
+  await execFileAsync(cmd, refreshArgs, { cwd: process.cwd(), env: process.env });
+  await execFileAsync(cmd, queueArgs, { cwd: process.cwd(), env: process.env });
+
+  revalidatePath("/dashboard");
+  revalidatePath("/setup");
 }
 
 export async function importGreenhouse(boardUrl: string) {
@@ -330,7 +452,7 @@ export async function importLever(handleOrUrl: string) {
 }
 
 export async function generatePacket(jobId: string) {
-  await requireUser();
+  const session = await requireUser();
   const job = await prisma.jobPosting.findUnique({
     where: { id: jobId },
     include: { company: true },
@@ -341,13 +463,21 @@ export async function generatePacket(jobId: string) {
   const experiences = await prisma.experienceItem.findMany({
     where: { verified: true },
   });
+  if (experiences.length === 0) {
+    return;
+  }
   const variant = await buildResumeVariant({
     job: { title: job.title, description: job.description },
     experiences,
   });
+  const user = await prisma.user.findUnique({
+    where: { email: session.user?.email ?? "" },
+    select: { githubUrl: true },
+  });
   const fieldPack = {
     jobTitle: job.title,
     company: job.company.name,
+    githubUrl: user?.githubUrl ?? null,
     auditTrail: variant.auditTrail,
   };
 
@@ -384,6 +514,7 @@ export async function generatePacket(jobId: string) {
 
   revalidatePath("/dashboard");
   revalidatePath("/applications");
+  revalidatePath("/apply");
 }
 
 export async function upsertApplicationStatus(jobId: string, status: string) {
@@ -412,6 +543,61 @@ export async function upsertApplicationStatus(jobId: string, status: string) {
   }
   revalidatePath("/applications");
   revalidatePath("/dashboard");
+}
+
+export async function skipJob(jobId: string, reason?: string) {
+  await requireUser();
+  const notes = reason ? `Skipped: ${reason}` : "Skipped";
+  const existing = await prisma.application.findFirst({
+    where: { jobId },
+  });
+  if (existing) {
+    await prisma.application.update({
+      where: { id: existing.id },
+      data: { status: "rejected", notes },
+    });
+  } else {
+    await prisma.application.create({
+      data: {
+        jobId,
+        status: "rejected",
+        notes,
+      },
+    });
+  }
+  revalidatePath("/dashboard");
+  revalidatePath("/apply");
+}
+
+export async function submitApplication(jobId: string) {
+  await requireUser();
+  const appliedAt = new Date();
+  const followUpAt = addBusinessDays(appliedAt, 3);
+  const existing = await prisma.application.findFirst({
+    where: { jobId },
+  });
+  if (existing) {
+    await prisma.application.update({
+      where: { id: existing.id },
+      data: {
+        status: "applied",
+        appliedAt,
+        followUpAt,
+      },
+    });
+  } else {
+    await prisma.application.create({
+      data: {
+        jobId,
+        status: "applied",
+        appliedAt,
+        followUpAt,
+      },
+    });
+  }
+  revalidatePath("/dashboard");
+  revalidatePath("/applications");
+  revalidatePath("/apply");
 }
 
 export async function updateApplicationDetails(formData: FormData) {

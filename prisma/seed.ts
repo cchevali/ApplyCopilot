@@ -21,6 +21,7 @@ async function main() {
   const adminEmail = process.env.ADMIN_EMAIL || "admin@example.com";
   const adminPassword = process.env.ADMIN_PASSWORD || "changeme";
   const adminName = process.env.ADMIN_NAME || "Admin";
+  const adminGithubUrl = process.env.ADMIN_GITHUB_URL || null;
 
   const existingUser = await prisma.user.findUnique({
     where: { email: adminEmail },
@@ -32,8 +33,14 @@ async function main() {
       data: {
         email: adminEmail,
         name: adminName,
+        githubUrl: adminGithubUrl,
         passwordHash,
       },
+    });
+  } else if (adminGithubUrl && existingUser.githubUrl !== adminGithubUrl) {
+    await prisma.user.update({
+      where: { id: existingUser.id },
+      data: { githubUrl: adminGithubUrl },
     });
   }
 
@@ -47,9 +54,26 @@ async function main() {
         name: "Northern Virginia",
         locations: defaultLocations,
         remoteAllowed: true,
-        roleTitles: [],
-        includeKeywords: [],
-        excludeKeywords: [],
+        roleTitles: [
+          "Help Desk",
+          "Service Desk",
+          "IT Support",
+          "Tier 1 Support",
+          "Desktop Support",
+          "Support Technician",
+        ],
+        includeKeywords: [
+          "ticket",
+          "troubleshoot",
+          "Windows",
+          "Active Directory",
+          "O365",
+          "Office 365",
+          "hardware",
+          "VPN",
+          "customer service",
+        ],
+        excludeKeywords: ["clearance required"],
       },
     });
   }

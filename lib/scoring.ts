@@ -109,6 +109,14 @@ export function scoreJobAgainstTarget(input: {
     });
   }
 
+  if (jobText.includes("github") || /\bgit\b/.test(jobText)) {
+    score += 3;
+    reasons.push({
+      text: "Mentions Git/GitHub tooling",
+      weight: 3,
+    });
+  }
+
   const excludeHits = input.target.excludeKeywords.filter((keyword) =>
     jobText.includes(keyword.toLowerCase())
   );

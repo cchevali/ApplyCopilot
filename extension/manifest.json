@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "ApplyCopilot Save Job",
+  "version": "0.1.0",
+  "description": "Save the current job page to ApplyCopilot (local, user-initiated).",
+  "permissions": ["activeTab", "scripting", "tabs"],
+  "action": {
+    "default_title": "Save to ApplyCopilot"
+  },
+  "background": {
+    "service_worker": "service-worker.js"
+  }
+}

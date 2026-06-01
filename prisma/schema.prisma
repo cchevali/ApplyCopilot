@@ -21,15 +21,29 @@ enum AtsType {
   lever
 }
 
+enum JobSourceType {
+  GREENHOUSE
+  LEVER
+  CAREERS_PAGE_JSONLD
+}
+
+enum IngestStatus {
+  SUCCESS
+  FAIL
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
   name         String?
+  githubUrl    String?
   passwordHash String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   resumes      Resume[]
   experiences  ExperienceItem[]
+  jobSources   JobSource[]
+  dailyQueues  DailyQueue[]
 }
 
 model Resume {
@@ -67,6 +81,7 @@ model TargetProfile {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   scores          JobScore[]
+  dailyQueues     DailyQueue[]
 }
 
 model Company {
@@ -96,6 +111,7 @@ model JobPosting {
   scores      JobScore[]
   applications Application[]
   packet      Packet?
+  queueItems  DailyQueueItem[]
 }
 
 model JobScore {
@@ -134,4 +150,55 @@ model Application {
   updatedAt  DateTime          @updatedAt
   job        JobPosting        @relation(fields: [jobId], references: [id])
   packet     Packet?           @relation(fields: [packetId], references: [id])
+}
+
+model JobSource {
+  id          String        @id @default(cuid())
+  userId      String
+  name        String
+  type        JobSourceType
+  urlOrHandle String
+  isEnabled   Boolean       @default(true)
+  lastRunAt   DateTime?
+  createdAt   DateTime      @default(now())
+  user        User          @relation(fields: [userId], references: [id])
+  runs        IngestRun[]
+}
+
+model IngestRun {
+  id          String       @id @default(cuid())
+  jobSourceId String
+  startedAt   DateTime
+  finishedAt  DateTime?
+  status      IngestStatus
+  statsJson   Json
+  errorText   String?
+  jobSource   JobSource    @relation(fields: [jobSourceId], references: [id])
+}
+
+model DailyQueue {
+  id              String        @id @default(cuid())
+  userId          String
+  date            String
+  targetProfileId String
+  maxItems        Int           @default(8)
+  createdAt       DateTime      @default(now())
+  user            User          @relation(fields: [userId], references: [id])
+  targetProfile   TargetProfile @relation(fields: [targetProfileId], references: [id])
+  items           DailyQueueItem[]
+
+  @@unique([userId, date, targetProfileId])
+}
+
+model DailyQueueItem {
+  id           String     @id @default(cuid())
+  dailyQueueId String
+  jobId        String
+  rank         Int
+  score        Int
+  createdAt    DateTime   @default(now())
+  dailyQueue   DailyQueue @relation(fields: [dailyQueueId], references: [id], onDelete: Cascade)
+  job          JobPosting @relation(fields: [jobId], references: [id])
+
+  @@unique([dailyQueueId, jobId])
 }

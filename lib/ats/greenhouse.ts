@@ -32,7 +32,7 @@ export async function fetchGreenhouseJobs(boardUrl: string) {
     `https://boards.greenhouse.io/${slug}.json`,
     {
       headers: {
-        "User-Agent": "ApplyCopilot/1.0 (local)",
+        "User-Agent": "ApplyCopilot/0.1 (+local job tracker)",
       },
     }
   );
@@ -52,7 +52,7 @@ export async function fetchGreenhouseJobs(boardUrl: string) {
 
 async function fetchWithBackoff(url: string, init: RequestInit, retries = 1) {
   const response = await fetch(url, init);
-  if (response.status === 429 && retries > 0) {
+  if ((response.status === 429 || response.status === 503) && retries > 0) {
     const retryAfter = response.headers.get("retry-after");
     const waitSeconds = retryAfter ? Number(retryAfter) : NaN;
     const waitMs = Number.isFinite(waitSeconds) ? waitSeconds * 1000 : 2000;
